@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"flag"
 	"fmt"
+	smtls "github.com/tiqio/qtls-go19"
 	"io"
 	"log"
 	"net/http"
@@ -69,6 +70,9 @@ func main() {
 	}
 	roundTripper := &http3.RoundTripper{
 		TLSClientConfig: &tls.Config{
+			CipherSuites:       []uint16{smtls.TLS_SM4_GCM_SM3},
+			MinVersion:         smtls.VersionTLS12,
+			CurvePreferences:   []smtls.CurveID{smtls.CurveSM2},
 			RootCAs:            pool,
 			InsecureSkipVerify: *insecure,
 			KeyLogWriter:       keyLog,
