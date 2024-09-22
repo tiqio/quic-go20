@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
+	smtls "github.com/tiqio/qtls-go19"
 	"time"
 
 	"github.com/quic-go/quic-go/internal/protocol"
@@ -151,6 +152,8 @@ func (a *updatableAEAD) setAEADParameters(aead cipher.AEAD, suite *qtls.CipherSu
 		a.invalidPacketLimit = protocol.InvalidPacketLimitAES
 	case tls.TLS_CHACHA20_POLY1305_SHA256:
 		a.invalidPacketLimit = protocol.InvalidPacketLimitChaCha
+	case smtls.TLS_SM4_GCM_SM3:
+		a.invalidPacketLimit = protocol.InvalidPacketLimitSM4
 	default:
 		panic(fmt.Sprintf("unknown cipher suite %d", suite.ID))
 	}

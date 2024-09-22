@@ -11,6 +11,8 @@ import (
 
 	"github.com/quic-go/quic-go/internal/protocol"
 	"github.com/quic-go/quic-go/internal/qtls"
+	smtls "github.com/tiqio/qtls-go19"
+	"github.com/tjfoc/gmsm/sm4"
 )
 
 type headerProtector interface {
@@ -32,6 +34,8 @@ func newHeaderProtector(suite *qtls.CipherSuiteTLS13, trafficSecret []byte, isLo
 		return newAESHeaderProtector(suite, trafficSecret, isLongHeader, hkdfLabel)
 	case tls.TLS_CHACHA20_POLY1305_SHA256:
 		return newChaChaHeaderProtector(suite, trafficSecret, isLongHeader, hkdfLabel)
+	case smtls.TLS_SM4_GCM_SM3:
+		return newSM4HeaderProtector(suite, trafficSecret, isLongHeader, hkdfLabel)
 	default:
 		panic(fmt.Sprintf("Invalid cipher suite id: %d", suite.ID))
 	}
@@ -125,6 +129,50 @@ func (p *chachaHeaderProtector) apply(sample []byte, firstByte *byte, hdrBytes [
 }
 
 func (p *chachaHeaderProtector) applyMask(firstByte *byte, hdrBytes []byte) {
+	if p.isLongHeader {
+		*firstByte ^= p.mask[0] & 0xf
+	} else {
+		*firstByte ^= p.mask[0] & 0x1f
+	}
+	for i := range hdrBytes {
+		hdrBytes[i] ^= p.mask[i+1]
+	}
+}
+
+type sm4HeaderProtector struct {
+	mask         []byte
+	block        cipher.Block
+	isLongHeader bool
+}
+
+var _ headerProtector = &sm4HeaderProtector{}
+
+func newSM4HeaderProtector(suite *qtls.CipherSuiteTLS13, trafficSecret []byte, isLongHeader bool, hkdfLabel string) headerProtector {
+	hpKey := hkdfExpandLabel(suite.Hash, trafficSecret, []byte{}, hkdfLabel, suite.KeyLen)
+	block, err := sm4.NewCipher(hpKey)
+	if err != nil {
+		panic(fmt.Sprintf("error creating new SM4 cipher: %s", err))
+	}
+	return &sm4HeaderProtector{
+		block:        block,
+		mask:         make([]byte, block.BlockSize()),
+		isLongHeader: isLongHeader,
+	}
+}
+
+func (p *sm4HeaderProtector) DecryptHeader(sample []byte, firstByte *byte, hdrBytes []byte) {
+	p.apply(sample, firstByte, hdrBytes)
+}
+
+func (p *sm4HeaderProtector) EncryptHeader(sample []byte, firstByte *byte, hdrBytes []byte) {
+	p.apply(sample, firstByte, hdrBytes)
+}
+
+func (p *sm4HeaderProtector) apply(sample []byte, firstByte *byte, hdrBytes []byte) {
+	if len(sample) != len(p.mask) {
+		panic("invalid sample size")
+	}
+	p.block.Encrypt(p.mask, sample)
 	if p.isLongHeader {
 		*firstByte ^= p.mask[0] & 0xf
 	} else {
